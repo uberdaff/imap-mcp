@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 
 # Define the path for storing tasks
 TASKS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tasks.json")
+def parse_imap_query(query: str) -> Optional[List[str]]:
+    """Parse IMAP search query into criteria list.
+    
+    Args:
+        query: The search query string
+    
+    Returns:
+        List of IMAP criteria or None if invalid
+    """
+    if not query.strip():
+        return None
+    parts = query.strip().split()
+    if not parts:
+        return None
+    known_keywords = {"SINCE", "BEFORE", "ON", "SENTSINCE", "SENTBEFORE", "SENTON", "FROM", "TO", "SUBJECT", "TEXT", "ALL", "UNSEEN", "SEEN"}
+    if parts[0].upper() in known_keywords:
+        return [p.upper() if p.upper() in known_keywords else p for p in parts]
+    return None
 
 def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
     """Register MCP tools.
@@ -300,7 +318,7 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
         Args:
             query: Search query
             folder: Folder to search in (None for all folders)
-            criteria: Search criteria (text, from, to, subject, all, unseen, seen)
+            criteria: Search criteria (text, from, to, subject, all, unseen, seen). For 'all', query can be a custom IMAP search string like 'SINCE 01-Aug-2022'
             limit: Maximum number of results
             ctx: MCP context
             account: Account name (uses default if omitted)
@@ -328,6 +346,11 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
             return f"Invalid search criteria: {criteria}"
         
         search_criteria = search_criteria_map[criteria.lower()]
+        
+        if criteria.lower() == "all" and query:
+            parsed_criteria = parse_imap_query(query)
+            if parsed_criteria:
+                search_criteria = parsed_criteria
         
         folders_to_search = [folder] if folder else client.list_folders()
         results = []

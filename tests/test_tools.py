@@ -241,7 +241,12 @@ class TestTools:
         # Test with invalid criteria
         result = await search_emails("test query", mock_context, criteria="invalid")
         assert "Invalid search criteria" in result
-
+        
+        # Test custom IMAP query for 'all' criteria
+        mock_client.search.reset_mock()
+        result = await search_emails("SINCE 01-Aug-2022", mock_context, criteria="all", folder="INBOX")
+        # Should call search with parsed criteria
+        mock_client.search.assert_called_with(["SINCE", "01-Aug-2022"], folder="INBOX")
     @pytest.mark.asyncio
     async def test_process_email(self, tools, mock_client, mock_context):
         """Test processing an email with multiple actions."""
