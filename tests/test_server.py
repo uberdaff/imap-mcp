@@ -9,7 +9,7 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from imap_mcp.server import create_server, server_lifespan, main
-from imap_mcp.config import ServerConfig, ImapConfig
+from imap_mcp.config import AccountConfig, ServerConfig, ImapConfig
 
 
 class TestServer:
@@ -19,14 +19,19 @@ class TestServer:
         """Test server creation with default configuration."""
         # Mock the config loading
         mock_config = ServerConfig(
-            imap=ImapConfig(
-                host="imap.example.com",
-                port=993,
-                username="test@example.com",
-                password="password",
-                use_ssl=True
-            ),
-            allowed_folders=["INBOX", "Sent"]
+            accounts={
+                "default": AccountConfig(
+                    imap=ImapConfig(
+                        host="imap.example.com",
+                        port=993,
+                        username="test@example.com",
+                        password="password",
+                        use_ssl=True
+                    ),
+                    allowed_folders=["INBOX", "Sent"]
+                )
+            },
+            default_account="default",
         )
         
         with mock.patch("imap_mcp.server.load_config", return_value=mock_config):
@@ -68,13 +73,18 @@ class TestServer:
         # Create mock server with config
         mock_server = mock.MagicMock()
         mock_config = ServerConfig(
-            imap=ImapConfig(
-                host="imap.example.com",
-                port=993,
-                username="test@example.com",
-                password="password",
-                use_ssl=True
-            )
+            accounts={
+                "default": AccountConfig(
+                    imap=ImapConfig(
+                        host="imap.example.com",
+                        port=993,
+                        username="test@example.com",
+                        password="password",
+                        use_ssl=True
+                    )
+                )
+            },
+            default_account="default",
         )
         mock_server._config = mock_config
         
@@ -94,7 +104,7 @@ class TestServer:
                 mock_client.connect.assert_called_once()
                 
                 # Verify client was added to context
-                assert context["imap_client"] == mock_client
+                assert context["imap_clients"]["default"] == mock_client
             
             # After exiting the context, verify disconnect was called
             mock_client.disconnect.assert_called_once()
@@ -107,13 +117,18 @@ class TestServer:
         mock_server._config = None
         
         mock_config = ServerConfig(
-            imap=ImapConfig(
-                host="imap.example.com",
-                port=993,
-                username="test@example.com",
-                password="password",
-                use_ssl=True
-            )
+            accounts={
+                "default": AccountConfig(
+                    imap=ImapConfig(
+                        host="imap.example.com",
+                        port=993,
+                        username="test@example.com",
+                        password="password",
+                        use_ssl=True
+                    )
+                )
+            },
+            default_account="default",
         )
         
         # Mock config loading and ImapClient
@@ -142,14 +157,19 @@ class TestServer:
         """Test the server_status tool."""
         # Mock the config
         mock_config = ServerConfig(
-            imap=ImapConfig(
-                host="imap.example.com",
-                port=993,
-                username="test@example.com",
-                password="password",
-                use_ssl=True
-            ),
-            allowed_folders=["INBOX", "Sent"]
+            accounts={
+                "default": AccountConfig(
+                    imap=ImapConfig(
+                        host="imap.example.com",
+                        port=993,
+                        username="test@example.com",
+                        password="password",
+                        use_ssl=True
+                    ),
+                    allowed_folders=["INBOX", "Sent"]
+                )
+            },
+            default_account="default",
         )
         
         # In the actual server implementation, server_status is defined as an inner function

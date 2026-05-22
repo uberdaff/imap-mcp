@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from imap_mcp.config import ImapConfig, ServerConfig, load_config
+from imap_mcp.config import AccountConfig, ImapConfig, ServerConfig, load_config
 
 
 class TestImapConfig:
@@ -144,13 +144,23 @@ class TestServerConfig:
         )
         
         # Test without allowed folders
-        server_config = ServerConfig(imap=imap_config)
+        server_config = ServerConfig(
+            accounts={"default": AccountConfig(imap=imap_config)},
+            default_account="default",
+        )
         assert server_config.imap == imap_config
         assert server_config.allowed_folders is None
         
         # Test with allowed folders
         allowed_folders = ["INBOX", "Sent", "Archive"]
-        server_config = ServerConfig(imap=imap_config, allowed_folders=allowed_folders)
+        server_config = ServerConfig(
+            accounts={
+                "default": AccountConfig(
+                    imap=imap_config, allowed_folders=allowed_folders
+                )
+            },
+            default_account="default",
+        )
         assert server_config.imap == imap_config
         assert server_config.allowed_folders == allowed_folders
 
