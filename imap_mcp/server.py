@@ -79,8 +79,7 @@ def create_server(config_path: Optional[str] = None, debug: bool = False) -> Fas
     # Create MCP server with all the necessary capabilities
     server = FastMCP(
         "IMAP",
-        description="IMAP Model Context Protocol server for email processing",
-        version="0.1.0",
+        instructions="IMAP Model Context Protocol server for email processing",
         lifespan=server_lifespan,
     )
     
