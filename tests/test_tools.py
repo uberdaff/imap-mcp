@@ -355,3 +355,94 @@ class TestTools:
         # Test process_email with invalid action
         result = await process_email("INBOX", 123, "nonexistent_action", ctx=mock_context)
         assert "Invalid action" in result
+
+    @pytest.mark.asyncio
+    async def test_get_email_content_success(self, tools, mock_client, mock_context, mock_email):
+        """Test successful email content retrieval."""
+        # Setup
+        mock_client.fetch_email.return_value = mock_email
+        
+        # Get the get_email_content function
+        get_email_content = tools["get_email_content"]
+        
+        # Execute
+        result = await get_email_content(folder="INBOX", uid=1, ctx=mock_context)
+        
+        # Verify
+        mock_client.fetch_email.assert_called_once_with(1, folder="INBOX")
+        assert "From: Sender <sender@example.com>" in result
+        assert "To: Recipient <recipient@example.com>" in result
+        assert "Subject: Test Email" in result
+        assert "--- EMAIL BODY ---" in result
+        assert "Test content" in result
+
+    @pytest.mark.asyncio
+    async def test_get_email_content_not_found(self, tools, mock_client, mock_context):
+        """Test email content retrieval when email not found."""
+        # Setup
+        mock_client.fetch_email.return_value = None
+        
+        # Get the get_email_content function
+        get_email_content = tools["get_email_content"]
+        
+        # Execute
+        result = await get_email_content(folder="INBOX", uid=999, ctx=mock_context)
+        
+        # Verify
+        mock_client.fetch_email.assert_called_once_with(999, folder="INBOX")
+        assert "Email with UID 999 not found in folder INBOX" in result
+
+    @pytest.mark.asyncio
+    async def test_get_email_content_error_handling(self, tools, mock_client, mock_context):
+        """Test error handling in email content retrieval."""
+        # Setup
+        mock_client.fetch_email.side_effect = Exception("Connection error")
+        
+        # Get the get_email_content function
+        get_email_content = tools["get_email_content"]
+        
+        # Execute
+        result = await get_email_content(folder="INBOX", uid=1, ctx=mock_context)
+        
+        # Verify
+        assert "Error: Connection error" in result
+    @pytest.mark.asyncio
+    async def test_get_email_content_with_attachments(self, tools, mock_client, mock_context):
+        """Test email content retrieval with attachments."""
+        # Setup email with attachments
+        from imap_mcp.models import EmailAttachment
+        attachment = EmailAttachment(
+            filename="test.pdf",
+            content_type="application/pdf",
+            size=1024,
+            content=b"fake pdf content"
+        )
+        
+        email_with_attachment = Email(
+            message_id="<test123@example.com>",
+            subject="Test Email with Attachment",
+            from_=EmailAddress(name="Sender", address="sender@example.com"),
+            to=[EmailAddress(name="Recipient", address="recipient@example.com")],
+            cc=[],
+            bcc=[],
+            date=datetime.now(),
+            content=EmailContent(text="Test content with attachment"),
+            attachments=[attachment],
+            flags=["\\Seen"],
+            headers={},
+            folder="INBOX",
+            uid=1
+        )
+        
+        mock_client.fetch_email.return_value = email_with_attachment
+        
+        # Get the get_email_content function
+        get_email_content = tools["get_email_content"]
+        
+        # Execute
+        result = await get_email_content(folder="INBOX", uid=1, ctx=mock_context)
+        
+        # Verify
+        assert "Attachments: 1" in result
+        assert "1. test.pdf (application/pdf, 1024 bytes)" in result
+        assert "Test content with attachment" in result

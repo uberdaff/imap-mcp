@@ -88,11 +88,27 @@ class ImapClient:
     
     def ensure_connected(self) -> None:
         """Ensure that we are connected to the IMAP server.
-        
+
+        Probes the existing socket with NOOP; reconnects if it has gone stale
+        (e.g. after the server dropped an idle connection).
+
         Raises:
             ConnectionError: If connection fails
         """
-        if not self.connected:
+        if not self.connected or self.client is None:
+            self.connect()
+            return
+        try:
+            self.client.noop()
+        except Exception as e:
+            logger.warning(f"IMAP NOOP failed ({e}); reconnecting")
+            try:
+                self.client.logout()
+            except Exception:
+                pass
+            self.client = None
+            self.connected = False
+            self.current_folder = None
             self.connect()
     
     def get_capabilities(self) -> List[str]:

@@ -354,6 +354,7 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
         
         folders_to_search = [folder] if folder else client.list_folders()
         results = []
+        errors = []
 
         for current_folder in folders_to_search:
             try:
@@ -380,7 +381,17 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
                             "has_attachments": len(email_obj.attachments) > 0,
                         })
             except Exception as e:
-                logger.warning(f"Error searching folder {current_folder}: {e}")
+                logger.error(f"Error searching folder {current_folder}: {e}")
+                errors.append({"folder": current_folder, "error": f"{type(e).__name__}: {e}"})
+
+        # If a specific folder was requested and it failed, raise so the caller sees it
+        if folder and errors:
+            err = errors[0]
+            raise RuntimeError(f"search_emails failed on folder '{err['folder']}': {err['error']}")
+
+        # If all folders errored with no results, surface the errors instead of silent []
+        if errors and not results:
+            return json.dumps({"results": [], "errors": errors}, indent=2)
 
         # Sort results by date (newest first)
         results.sort(
@@ -583,3 +594,57 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
             result["message"] = f"Error: {e}"
         
         return result
+
+    @mcp.tool()
+    async def get_email_content(folder: str, uid: int, ctx: Context, account: Optional[str] = None) -> str:
+        """Get the full content of a specific email including body text.
+
+        Args:
+            folder: Email folder name
+            uid: Email UID
+            ctx: MCP context
+            account: Account name (uses default if omitted)
+
+        Returns:
+            Full email content including headers and body text
+        """
+        client = get_client_from_context(ctx, account)
+        
+        try:
+            # Fetch email
+            email_obj = client.fetch_email(uid, folder=folder)
+            
+            if not email_obj:
+                return f"Email with UID {uid} not found in folder {folder}"
+            
+            # Format email as text with full content
+            parts = [
+                f"From: {email_obj.from_}",
+                f"To: {', '.join(str(to) for to in email_obj.to)}",
+            ]
+            
+            if email_obj.cc:
+                parts.append(f"Cc: {', '.join(str(cc) for cc in email_obj.cc)}")
+            
+            if email_obj.date:
+                parts.append(f"Date: {email_obj.date.isoformat()}")
+            
+            parts.append(f"Subject: {email_obj.subject}")
+            parts.append(f"Flags: {', '.join(email_obj.flags)}")
+            
+            if email_obj.attachments:
+                parts.append(f"Attachments: {len(email_obj.attachments)}")
+                for i, attachment in enumerate(email_obj.attachments, 1):
+                    parts.append(f"  {i}. {attachment.filename} ({attachment.content_type}, {attachment.size} bytes)")
+            
+            parts.append("")  # Empty line before content
+            parts.append("--- EMAIL BODY ---")
+            
+            # Add email content
+            content = email_obj.content.get_best_content()
+            parts.append(content)
+            
+            return "\n".join(parts)
+        except Exception as e:
+            logger.error(f"Error fetching email content: {e}")
+            return f"Error: {e}"
