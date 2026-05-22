@@ -102,19 +102,57 @@ class ImapConfig:
 
 
 @dataclass
-class ServerConfig:
-    """MCP server configuration."""
-    
+class AccountConfig:
+    """Configuration for a single email account."""
+
     imap: ImapConfig
     allowed_folders: Optional[List[str]] = None
-    
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AccountConfig":
+        """Create account configuration from dictionary."""
+        return cls(
+            imap=ImapConfig.from_dict(data.get("imap", data)),
+            allowed_folders=data.get("allowed_folders"),
+        )
+
+
+@dataclass
+class ServerConfig:
+    """MCP server configuration."""
+
+    accounts: Dict[str, AccountConfig]
+    default_account: str
+
+    @property
+    def imap(self) -> ImapConfig:
+        return self.accounts[self.default_account].imap
+
+    @property
+    def allowed_folders(self) -> Optional[List[str]]:
+        return self.accounts[self.default_account].allowed_folders
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ServerConfig":
-        """Create configuration from dictionary."""
-        return cls(
+        """Create configuration from dictionary.
+
+        Supports both multi-account format (with 'accounts' key) and
+        legacy single-account format (with 'imap' key).
+        """
+        if "accounts" in data:
+            accounts = {
+                name: AccountConfig.from_dict(acct_data)
+                for name, acct_data in data["accounts"].items()
+            }
+            default = data.get("default_account", next(iter(accounts)))
+            return cls(accounts=accounts, default_account=default)
+
+        # Legacy single-account format
+        account = AccountConfig(
             imap=ImapConfig.from_dict(data.get("imap", {})),
             allowed_folders=data.get("allowed_folders"),
         )
+        return cls(accounts={"default": account}, default_account="default")
 
 
 def load_config(config_path: Optional[str] = None) -> ServerConfig:

@@ -12,19 +12,30 @@ import imap_mcp.smtp_client as smtp_client
 logger = logging.getLogger(__name__)
 
 
-def get_client_from_context(ctx: Context) -> ImapClient:
+def get_client_from_context(ctx: Context, account: str | None = None) -> ImapClient:
     """Get IMAP client from context.
-    
+
     Args:
         ctx: MCP context
-        
+        account: Account name. Uses default if None.
+
     Returns:
         IMAP client
-        
+
     Raises:
         RuntimeError: If IMAP client is not available
     """
-    client = ctx.request_context.lifespan_context.get("imap_client")
+    lc = ctx.request_context.lifespan_context
+    clients = lc.get("imap_clients")
+    if clients:
+        name = account or lc.get("default_account", next(iter(clients)))
+        client = clients.get(name)
+        if not client:
+            available = ", ".join(clients.keys())
+            raise RuntimeError(f"Unknown account '{name}'. Available: {available}")
+        return client
+    # Legacy single-client fallback
+    client = lc.get("imap_client")
     if not client:
         raise RuntimeError("IMAP client not available")
     return client

@@ -36,25 +36,27 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict]:
     # The config is stored in the server's state
     config = getattr(server, "_config", None)
     if not config:
-        # This is a fallback in case we can't find the config
         config = load_config()
-    
+
     if not isinstance(config, ServerConfig):
         raise TypeError("Invalid server configuration")
-    
-    imap_client = ImapClient(config.imap, config.allowed_folders)
-    
+
+    clients = {}
     try:
-        # Connect to IMAP server
-        logger.info("Connecting to IMAP server...")
-        imap_client.connect()
-        
-        # Yield the context with the IMAP client
-        yield {"imap_client": imap_client}
+        for name, acct in config.accounts.items():
+            logger.info(f"Connecting to IMAP server for account '{name}'...")
+            client = ImapClient(acct.imap, acct.allowed_folders)
+            client.connect()
+            clients[name] = client
+
+        yield {
+            "imap_clients": clients,
+            "default_account": config.default_account,
+        }
     finally:
-        # Disconnect from IMAP server
-        logger.info("Disconnecting from IMAP server...")
-        imap_client.disconnect()
+        for name, client in clients.items():
+            logger.info(f"Disconnecting IMAP account '{name}'...")
+            client.disconnect()
 
 
 def create_server(config_path: Optional[str] = None, debug: bool = False) -> FastMCP:
@@ -84,33 +86,35 @@ def create_server(config_path: Optional[str] = None, debug: bool = False) -> Fas
     
     # Store config for access in the lifespan
     server._config = config
-    
+
     # Create IMAP client for setup (will be recreated in lifespan)
-    imap_client = ImapClient(config.imap, config.allowed_folders)
-    
+    default_acct = config.accounts[config.default_account]
+    imap_client = ImapClient(default_acct.imap, default_acct.allowed_folders)
+
     # Register resources and tools
     register_resources(server, imap_client)
     register_tools(server, imap_client)
-    
+
     # Add server status tool
     @server.tool()
     def server_status() -> str:
         """Get server status and configuration info."""
-        status = {
-            "server": "IMAP MCP",
-            "version": "0.1.0",
-            "imap_host": config.imap.host,
-            "imap_port": config.imap.port,
-            "imap_user": config.imap.username,
-            "imap_ssl": config.imap.use_ssl,
-        }
-        
-        if config.allowed_folders:
-            status["allowed_folders"] = list(config.allowed_folders)
-        else:
-            status["allowed_folders"] = "All folders allowed"
-        
-        return "\n".join(f"{k}: {v}" for k, v in status.items())
+        lines = [f"server: IMAP MCP", f"version: 0.1.0", f"default_account: {config.default_account}"]
+        for name, acct in config.accounts.items():
+            lines.append(f"account '{name}': {acct.imap.username} @ {acct.imap.host}")
+        return "\n".join(lines)
+
+    @server.tool()
+    def list_accounts() -> list[dict]:
+        """List available IMAP accounts.
+
+        Returns:
+            A list of dicts with account name and username.
+        """
+        return [
+            {"account": name, "username": acct.imap.username, "host": acct.imap.host}
+            for name, acct in config.accounts.items()
+        ]
     
     # Apply MCP protocol extension for Claude Desktop compatibility
     server = extend_server(server)

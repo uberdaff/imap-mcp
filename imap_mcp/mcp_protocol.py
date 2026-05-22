@@ -36,28 +36,6 @@ def extend_server(server: FastMCP) -> FastMCP:
         
         return "No email folders available"
     
-    # Register tools for Claude desktop compatibility
-    @server.tool()
-    def email_search(query: str) -> Dict[str, Any]:
-        """Search for emails using a query string.
-        
-        Args:
-            query: Search query string
-            
-        Returns:
-            Dict containing search results
-        """
-        logger.info(f"Searching emails with query: {query}")
-        
-        # Basic implementation - would be expanded in a real system
-        if hasattr(server, "_lifespan_context") and server._lifespan_context:
-            imap_client = server._lifespan_context.get("imap_client")
-            if imap_client:
-                # This would be replaced with actual search functionality
-                return {"results": "Search results would be returned here"}
-        
-        return {"results": "No results found"}
-    
     # Register prompts
     @server.prompt()
     def search_emails(query: str) -> str:
