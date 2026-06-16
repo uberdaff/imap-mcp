@@ -46,7 +46,17 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict]:
         for name, acct in config.accounts.items():
             logger.info(f"Connecting to IMAP server for account '{name}'...")
             client = ImapClient(acct.imap, acct.allowed_folders)
-            client.connect()
+            # Register the client even if the initial connect fails, so the
+            # account stays addressable and reconnects lazily (via
+            # ensure_connected) once the host is reachable again. A single
+            # unreachable account must not block startup / the MCP handshake.
+            try:
+                client.connect()
+            except Exception as e:
+                logger.warning(
+                    f"Could not connect to account '{name}' at startup: {e}. "
+                    f"It will be retried on first use."
+                )
             clients[name] = client
 
         yield {

@@ -58,7 +58,8 @@ class ImapConfig:
     password: Optional[str] = None
     oauth2: Optional[OAuth2Config] = None
     use_ssl: bool = True
-    
+    timeout: int = 30
+
     @property
     def is_gmail(self) -> bool:
         """Check if this is a Gmail configuration."""
@@ -98,6 +99,7 @@ class ImapConfig:
             password=password,
             oauth2=oauth2_config,
             use_ssl=data.get("use_ssl", True),
+            timeout=data.get("timeout", 30),
         )
 
 

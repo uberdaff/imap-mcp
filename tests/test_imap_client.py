@@ -51,9 +51,10 @@ class TestImapClient:
             
             # Verify connection was established with correct parameters
             mock_client_class.assert_called_once_with(
-                "imap.example.com", 
-                port=993, 
-                ssl=True
+                "imap.example.com",
+                port=993,
+                ssl=True,
+                timeout=30,
             )
             
             # Verify login was called with correct credentials

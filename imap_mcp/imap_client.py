@@ -3,6 +3,7 @@
 import email
 import logging
 import re
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -34,18 +35,56 @@ class ImapClient:
         self.current_folder = None  # Store the currently selected folder
         self.folder_message_counts = {}  # Cache for folder message counts
     
+    def _connect_with_timeout(self) -> "imapclient.IMAPClient":
+        """Open the IMAPClient connection, bounded by ``config.timeout`` seconds.
+
+        Works around imapclient 3.1.0 not enforcing its own connect timeout: the
+        blocking constructor runs in a daemon thread that is abandoned if it
+        overruns, so an unreachable host raises instead of hanging.
+
+        Raises:
+            ConnectionError: If the connection does not complete within timeout.
+        """
+        result: Dict[str, object] = {}
+
+        def _open() -> None:
+            try:
+                result["client"] = imapclient.IMAPClient(
+                    self.config.host,
+                    port=self.config.port,
+                    ssl=self.config.use_ssl,
+                    timeout=self.config.timeout,
+                )
+            except Exception as exc:  # surfaced to the caller below
+                result["error"] = exc
+
+        worker = threading.Thread(target=_open, daemon=True)
+        worker.start()
+        worker.join(self.config.timeout)
+        if worker.is_alive():
+            raise ConnectionError(
+                f"Connection to {self.config.host} timed out after "
+                f"{self.config.timeout}s"
+            )
+        if "error" in result:
+            raise result["error"]
+        return result["client"]
+
     def connect(self) -> None:
         """Connect to IMAP server.
-        
+
         Raises:
             ConnectionError: If connection fails
         """
         try:
-            self.client = imapclient.IMAPClient(
-                self.config.host, 
-                port=self.config.port, 
-                ssl=self.config.use_ssl,
-            )
+            # imapclient 3.1.0's IMAP4_TLS stores its connect timeout but never
+            # forwards it to imaplib.open(), so connecting to an unreachable host
+            # blocks on the underlying socket for the OS default (~2 min) no
+            # matter what `timeout` we pass. Run the connecting constructor in a
+            # worker thread and abandon it if it overruns, so a dead account
+            # fails fast instead of hanging server startup. (The `timeout` arg
+            # still bounds reads once connected.)
+            self.client = self._connect_with_timeout()
             
             # Use OAuth2 for Gmail if configured
             if self.config.requires_oauth2:
