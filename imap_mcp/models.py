@@ -130,10 +130,11 @@ class EmailAttachment:
 @dataclass
 class EmailContent:
     """Email content representation."""
-    
+
     text: Optional[str] = None
     html: Optional[str] = None
-    
+    calendar: Optional[str] = None  # raw iCalendar (text/calendar / .ics) body, if any
+
     def get_best_content(self) -> str:
         """Return the best available content."""
         if self.text:
@@ -235,14 +236,27 @@ class Email:
                 else:
                     content_type = part.get_content_type()
                     content_disposition = part.get("Content-Disposition", "")
-                    
+
+                    # Capture iCalendar (text/calendar) content so meeting invites
+                    # aren't lost. Teams/Outlook send the invite as a text/calendar
+                    # alternative part with no Content-Disposition and no name=, so it
+                    # would otherwise fall through every branch and be dropped. This
+                    # runs regardless of the attachment check below (a named .ics is
+                    # still kept as an attachment too).
+                    if content_type == "text/calendar" and not content.calendar:
+                        try:
+                            charset = part.get_content_charset() or "utf-8"
+                            content.calendar = part.get_payload(decode=True).decode(charset, errors="replace")
+                        except Exception as e:
+                            content.calendar = f"[Error decoding calendar content: {e}]"
+
                     # Handle attachments (both explicit and inline)
-                    if ("attachment" in content_disposition or 
+                    if ("attachment" in content_disposition or
                         "inline" in content_disposition or
                         content_type.startswith("image/") or
                         content_type.startswith("application/") or
                         "name=" in part.get("Content-Type", "")):
-                        
+
                         attachments.append(EmailAttachment.from_part(part))
                     # Handle text content
                     elif content_type == "text/plain":
@@ -270,7 +284,7 @@ class Email:
         else:
             # Single part message
             content_type = message.get_content_type()
-            
+
             if content_type == "text/plain":
                 try:
                     charset = message.get_content_charset() or "utf-8"
@@ -283,10 +297,29 @@ class Email:
                     content.html = message.get_payload(decode=True).decode(charset, errors="replace")
                 except Exception as e:
                     content.html = f"[Error decoding HTML content: {e}]"
+            elif content_type == "text/calendar":
+                try:
+                    charset = message.get_content_charset() or "utf-8"
+                    content.calendar = message.get_payload(decode=True).decode(charset, errors="replace")
+                except Exception as e:
+                    content.calendar = f"[Error decoding calendar content: {e}]"
             else:
                 # If not plain text or HTML, treat as attachment
                 attachments.append(EmailAttachment.from_part(message))
-        
+
+        # Fallback: if the invite arrived as a named .ics attachment (e.g. some
+        # Outlook senders) rather than an inline text/calendar part, lift its
+        # content into content.calendar so callers have one place to look.
+        if not content.calendar:
+            for att in attachments:
+                if (att.filename or "").lower().endswith(".ics") or att.content_type == "text/calendar":
+                    if att.content:
+                        try:
+                            content.calendar = att.content.decode("utf-8", errors="replace")
+                        except Exception:
+                            pass
+                    break
+
         return cls(
             message_id=message_id,
             subject=subject,

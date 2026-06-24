@@ -49,64 +49,6 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
 
     # Using decorator pattern to register tools
     @mcp.tool()
-    async def draft_meeting_reply_tool(invite_details: Dict[str, Any], availability_status: bool, ctx: Context) -> Dict[str, str]:
-        """Drafts a meeting reply (accept/decline) based on calendar invite details and availability.
-        
-        Args:
-            invite_details: Dictionary containing invite details (subject, start_time, end_time, organizer, location)
-            availability_status: Whether the user is available for the meeting (True=available/accept, False=unavailable/decline)
-            ctx: MCP context
-            
-        Returns:
-            Dictionary with reply text and additional metadata
-        """
-        return await draft_meeting_reply(invite_details, availability_status, ctx)
-    
-    @mcp.tool()
-    async def identify_meeting_invite_tool(folder: str, uid: int, ctx: Context, account: Optional[str] = None) -> Dict[str, Any]:
-        """Identifies if an email is a meeting invite and extracts relevant details.
-
-        Args:
-            folder: Email folder name
-            uid: Email UID
-            ctx: MCP context
-            account: Account name (uses default if omitted)
-
-        Returns:
-            Dictionary with invite details if it's a meeting invite, or status information if not
-        """
-        return await identify_meeting_invite(folder, uid, ctx, account)
-    
-    @mcp.tool()
-    async def check_calendar_availability_tool(start_time: str, end_time: str, ctx: Context) -> Dict[str, Any]:
-        """Checks calendar availability for a given time slot.
-        
-        Args:
-            start_time: Meeting start time (ISO format)
-            end_time: Meeting end time (ISO format)
-            ctx: MCP context
-            
-        Returns:
-            Dictionary with availability status and additional information
-        """
-        return await check_calendar_availability(start_time, end_time, ctx)
-    
-    @mcp.tool()
-    async def process_invite_email_tool(folder: str, uid: int, ctx: Context, account: Optional[str] = None) -> Dict[str, Any]:
-        """Processes a meeting invitation email: identifies invite, checks availability, drafts reply, saves draft.
-
-        Args:
-            folder: Email folder name
-            uid: Email UID
-            ctx: MCP context
-            account: Account name (uses default if omitted)
-
-        Returns:
-            Dictionary with processing results and status information
-        """
-        return await process_invite_email(folder, uid, ctx, account)
-    
-    @mcp.tool()
     async def create_task(description: str, ctx: Context, due_date: Optional[str] = None, 
                           priority: Optional[int] = None) -> str:
         """Creates a new task and saves it to a local file.
@@ -639,11 +581,23 @@ def register_tools(mcp: FastMCP, imap_client: ImapClient) -> None:
             
             parts.append("")  # Empty line before content
             parts.append("--- EMAIL BODY ---")
-            
+
             # Add email content
             content = email_obj.content.get_best_content()
             parts.append(content)
-            
+
+            # Surface the iCalendar part for meeting invites (Teams/Outlook put the
+            # real DTSTART/DTEND here, NOT in the body). Without this the agent only
+            # sees a body with no time and cannot create the calendar event.
+            if getattr(email_obj.content, "calendar", None):
+                parts.append("")
+                parts.append("--- CALENDAR INVITE (text/calendar / .ics) ---")
+                parts.append("Note: the authoritative meeting time is DTSTART/DTEND below.")
+                parts.append("A trailing 'Z' means UTC; a TZID=... (incl. Windows names")
+                parts.append("like 'W. Europe Standard Time' ~= Europe/Oslo) means that")
+                parts.append("zone's local time. Convert to Europe/Oslo when creating the event.")
+                parts.append(email_obj.content.calendar)
+
             return "\n".join(parts)
         except Exception as e:
             logger.error(f"Error fetching email content: {e}")

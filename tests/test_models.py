@@ -90,6 +90,43 @@ class TestModels(unittest.TestCase):
         self.assertIn("From: John Doe <john@example.com>", summary)
         self.assertIn("Subject: Test Email", summary)
 
+    def test_email_from_message_captures_calendar_invite(self):
+        """A Teams/Outlook invite's text/calendar part must be captured.
+
+        These arrive as a text/calendar alternative with no Content-Disposition
+        and no name=, so the body alone has no meeting time. Regression test for
+        the invite-time-lost bug (the real time lives in DTSTART here).
+        """
+        msg = MIMEMultipart("alternative")
+        msg["From"] = "Jøran Laukeland <joran@proresult.no>"
+        msg["To"] = "dagfinn@purpeon.com"
+        msg["Subject"] = "Gjennomgang"
+        msg["Date"] = email.utils.formatdate()
+
+        msg.attach(MIMEText("Vi har hatt en gjennomgang.", "plain"))
+        msg.attach(MIMEText("<p>Vi har hatt en gjennomgang.</p>", "html"))
+
+        ics = (
+            "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\n"
+            "SUMMARY;LANGUAGE=nb-NO:Gjennomgang\r\n"
+            "DTSTART;TZID=W. Europe Standard Time:20260625T103000\r\n"
+            "DTEND;TZID=W. Europe Standard Time:20260625T110000\r\n"
+            "LOCATION;LANGUAGE=nb-NO:Microsoft Teams-møte\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        cal_part = MIMEText(ics, "calendar")
+        cal_part.set_param("method", "REQUEST", header="Content-Type")
+        msg.attach(cal_part)
+
+        email_obj = Email.from_message(msg, uid=670, folder="INBOX")
+
+        # The invite part must not be dropped, and not be mistaken for a file.
+        self.assertEqual(len(email_obj.attachments), 0)
+        self.assertIsNotNone(email_obj.content.calendar)
+        self.assertIn("DTSTART;TZID=W. Europe Standard Time:20260625T103000",
+                      email_obj.content.calendar)
+        self.assertIn("SUMMARY;LANGUAGE=nb-NO:Gjennomgang", email_obj.content.calendar)
+
 
 if __name__ == "__main__":
     unittest.main()
